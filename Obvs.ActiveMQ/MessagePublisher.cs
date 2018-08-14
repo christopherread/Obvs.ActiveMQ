@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Threading.Tasks;
 using Apache.NMS;
+using Apache.NMS.ActiveMQ.Commands;
 using Obvs.ActiveMQ.Extensions;
 using Obvs.MessageProperties;
 using Obvs.Serialization;
@@ -114,18 +117,24 @@ namespace Obvs.ActiveMQ
         
         protected virtual IMessage GenerateMessage(TMessage message, IMessageProducer producer, IMessageSerializer serializer)
         {
-            var bytesMessage = producer.CreateBytesMessage();
+            // Instead of creating a bytes message, it seems more efficient to create a ActiveMQMessage and edit directly.
+            var activeMQMessage = (ActiveMQMessage)producer.CreateMessage();
 
             using (var stream = StreamManager.Instance.GetStream())
             {
                 var offset = stream.Position;
 
                 serializer.Serialize(stream, message);
-                
-                bytesMessage.WriteBytes(stream.GetBuffer(), (int)offset, (int)(stream.Position - offset));
+
+                var count = (int) (stream.Position - offset);
+                var content = new byte[count];
+
+                Array.Copy(stream.GetBuffer(), offset, content, 0L, count);
+
+                activeMQMessage.Content = content;
             }
 
-            return bytesMessage;
+            return activeMQMessage;
         }
 
         private static void AppendTypeNameProperty(TMessage message, Dictionary<string, object> properties)
